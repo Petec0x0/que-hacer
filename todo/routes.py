@@ -1,32 +1,50 @@
 from todo import app, db
-from flask import request, jsonify
+from flask import request, jsonify, make_response
 import todo
 from todo.models import User, Todo
 from werkzeug.security import generate_password_hash, check_password_hash
 import uuid # for generating users unique public ID
-from sqlalchemy import and_
+import jwt
+import datetime
+from functools import wraps
+
+
+# decorator for authorization
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        # check if the token exists in the request header
+        if 'x-access-token' in request.headers:
+            token = request.headers['x-access-token']
+        # return an error message if there is no token
+        if not token:
+            return jsonify({'error':True, 'message' : 'Token is missing!'}), 401
+        # decode the token if it exists in a try except
+        try: 
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms="HS256")
+            print('Public ID:', data['public_id'])
+            current_user = User.query.filter_by(public_id=data['public_id']).first()
+        except:
+            return jsonify({'error':True, 'message' : 'Token is invalid!'}), 401
+
+        return f(current_user, *args, **kwargs)
+
+    return decorated
+
+
 
 """
    THE USER ROUTES 
 """
-# route for adding new user
-@app.route('/user/create', methods=['POST'])
-def create_user():
-    # fetch post request data
-    data = request.get_json(force=True)
-    # create an object for a new user
-    new_user = User(public_id=str(uuid.uuid4()), username=data['username'], email=data['email'], 
-                    password=generate_password_hash(data['password']))
-    # add the user to the database and commit
-    db.session.add(new_user)
-    db.session.commit()
-
-    # return a success message after commit
-    return jsonify({'error':False, 'message':'User Created Sucessfully'})
-
 # this route gets all the available users in the database
 @app.route('/users', methods=['GET'])
-def all_user():
+@token_required
+def all_user(current_user):
+    # make sure only the admin has access to this endpoint
+    if not current_user.is_admin:
+        return jsonify({'message':'Unauthorized Access', 'error':True}), 401
+
     # get all user 
     users = User.query.all()
     
@@ -45,7 +63,8 @@ def all_user():
 
 # get a particular user
 @app.route('/user/<public_id>', methods=['GET'])
-def get_user(public_id):
+@token_required
+def get_user(current_user, public_id):
     # get a particular user data
     user = User.query.filter_by(public_id=public_id).first()
     # jsonify user data
@@ -60,7 +79,12 @@ def get_user(public_id):
 
 # this route promotes a user to admin
 @app.route('/user/promote/<public_id>', methods=['PUT'])
-def promote_user(public_id):
+@token_required
+def promote_user(current_user, public_id):
+    # make sure only the admin has access to this endpoint
+    if not current_user.is_admin:
+        return jsonify({'message':'Unauthorized Access', 'error':True}), 401
+
     # get a particular user data
     user = User.query.filter_by(public_id=public_id).first()
     # make sure the exists before proceding
@@ -81,12 +105,13 @@ def promote_user(public_id):
 """
 # route for creating a todo
 @app.route('/todo/create', methods=['POST'])
-def create_todo():
+@token_required
+def create_todo(current_user):
     # get request data
     data = request.get_json(force=True)
 
     # create a todo object
-    new_todo = Todo(body=data['body'], reminder=data['reminder'], creator=data['creator'])
+    new_todo = Todo(body=data['body'], reminder=data['reminder'], creator=current_user.id)
 
     # add todo to the database and commit
     db.session.add(new_todo)
@@ -96,9 +121,10 @@ def create_todo():
 
 
 # route for todos of a particular user
-@app.route('/todo/get/<user_id>', methods=['GET'])
-def get_todo(user_id):
-    todos = Todo.query.filter_by(creator=user_id)
+@app.route('/todo/get', methods=['GET'])
+@token_required
+def get_todo(current_user):
+    todos = Todo.query.filter_by(creator=current_user.id)
 
     if not todos:
         return jsonify({'message':'Todos Not Found', 'error':True})
@@ -118,12 +144,13 @@ def get_todo(user_id):
 
 # route for marking a todo as complete
 @app.route('/todo/complete', methods=['PUT'])
-def complete_todo():
+@token_required
+def complete_todo(current_user):
     # get PUT request data
     data = request.get_json(force=True)
 
     # get the todo object
-    todo = Todo.query.filter_by(id=data['id'], creator=data['user_id']).first()
+    todo = Todo.query.filter_by(id=data['todo_id'], creator=current_user.id).first()
     # check if todo exists
     if not todo:
         return jsonify({'message':'Todo Not Found', 'error':True})
@@ -136,12 +163,13 @@ def complete_todo():
 
 # route for deleting a todo
 @app.route('/todo/delete', methods=['DELETE'])
-def delete_todo():
+@token_required
+def delete_todo(current_user):
     # get DELETE request data
     data = request.get_json(force=True)
 
     # get the todo object
-    todo = Todo.query.filter_by(id=data['id'], creator=data['user_id']).first()
+    todo = Todo.query.filter_by(id=data['todo_id'], creator=current_user.id).first()
     # check if todo exists
     if not todo:
         return jsonify({'message':'Todo Not Found', 'error':True})
@@ -152,3 +180,60 @@ def delete_todo():
 
     return jsonify({'message':'Todo Deleted Successfully', 'error':False})
 
+
+"""
+    THE AUTHENTICATION ROUTES
+"""
+# the signup route
+@app.route('/auth/signup', methods=['POST'])
+def signup():
+    # fetch post request data
+    data = request.get_json(force=True)
+    # create an object for a new user
+    new_user = User(public_id=str(uuid.uuid4()), username=data['username'], email=data['email'], 
+                    password=generate_password_hash(data['password']))
+    # add the user to the database and commit
+    db.session.add(new_user)
+    db.session.commit()
+
+    # return a success message after commit
+    return jsonify({'error':False, 'message':'User Created Sucessfully'})
+
+
+# the login route
+@app.route('/auth/login', methods=['POST'])
+def login():
+    # get login data from Authorization header
+    auth = request.authorization
+    # making the username and password exists on the authorization header
+    if not auth or not auth.username or not auth.password:
+        # return an error message
+        return make_response(
+            {'error':True,'message':'Could not verify 1'}, 
+            401, 
+            {'WWW-Authenticate' : 'Basic realm="Login required!"'})
+    # fetch user with the provided username
+    user = User.query.filter_by(username=auth.username).first()
+
+    if not user:
+        # return an error message if user does not exist
+        return make_response(
+            {'error':True,'message':'Could not verify 2'}, 
+            401, 
+            {'WWW-Authenticate' : 'Basic realm="Login required!"'})
+
+    # create a JWT token if user password is correct
+    if check_password_hash(user.password, auth.password):
+        token = jwt.encode(
+            {
+            'public_id' : user.public_id, 
+            'exp' : datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
+            }, app.config['SECRET_KEY'], "HS256")
+
+        return jsonify({'token' : token})
+
+    # return an error message if the password is incorrect
+    return make_response(
+            {'error':True,'message':'Could not verify 3'}, 
+            401, 
+            {'WWW-Authenticate' : 'Basic realm="Login required!"'})
