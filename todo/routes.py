@@ -7,6 +7,7 @@ import uuid # for generating users unique public ID
 import jwt
 import datetime
 from functools import wraps
+from flask_cors import cross_origin
 
 
 # decorator for authorization
@@ -15,7 +16,7 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = None
         # check if the token exists in the request header
-        if 'x-access-token' in request.headers:
+        if 'X-access-token' in request.headers:
             token = request.headers['x-access-token']
         # return an error message if there is no token
         if not token:
@@ -23,7 +24,6 @@ def token_required(f):
         # decode the token if it exists in a try except
         try: 
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms="HS256")
-            print('Public ID:', data['public_id'])
             current_user = User.query.filter_by(public_id=data['public_id']).first()
         except:
             return jsonify({'error':True, 'message' : 'Token is invalid!'}), 401
@@ -186,6 +186,7 @@ def delete_todo(current_user):
 """
 # the signup route
 @app.route('/auth/signup', methods=['POST'])
+@cross_origin()
 def signup():
     # fetch post request data
     data = request.get_json(force=True)
@@ -197,6 +198,9 @@ def signup():
     db.session.commit()
 
     # return a success message after commit
+    # response = make_response(jsonify({'error':False, 'message':'User Created Sucessfully'}))
+    # response.headers["Access-Control-Allow-Origin"] = "*"
+    # return response
     return jsonify({'error':False, 'message':'User Created Sucessfully'})
 
 
@@ -230,7 +234,7 @@ def login():
             'exp' : datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
             }, app.config['SECRET_KEY'], "HS256")
 
-        return jsonify({'token' : token})
+        return jsonify({'token' : token, 'error':False, 'message':'Login Success'})
 
     # return an error message if the password is incorrect
     return make_response(
