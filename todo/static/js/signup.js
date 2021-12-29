@@ -1,4 +1,4 @@
-var api_host_url = "https://que-hacer.herokuapp.com/";
+var api_host_url = "https://que-hacer.onyedikachiudeh.repl.co/";
 
 // get the spin-loader
 var spin_loader = document.getElementById('spin_loader');
@@ -11,36 +11,24 @@ var info_box = document.getElementById('info_box');
 info_box.style.display = 'none';
 
 // get the signup form
-var login_form = document.forms['login_form'];
+var signup_form = document.forms['signup_form'];
 
-
-// set cookie function
-function setCookie(name,value,days) {
-    var expires = "";
-    if (days) {
-        var date = new Date();
-        date.setTime(date.getTime() + (days*24*60*60*1000));
-        expires = "; expires=" + date.toUTCString();
-    }
-    document.cookie = name + "=" + (value || "")  + expires + "; path=/";
-}
-
-function login_now(){
+function signup_now(){
     //display spin loader
     spin_loader.style.display = 'block';
     
     // get form data
-    var username = login_form.username.value;
-    var password = login_form.password.value;
+    var username = signup_form.username.value;
+    var email = signup_form.email_address.value;
+    var password = signup_form.password.value;
 
     // validate form data
-    if((username == "") || (password == "")){
+    if((username == "") || (email == "") || (password == "")){
         alert("Error: You can't have an empty form field")
         // hide spin loader
         spin_loader.style.display = 'none';
         return false;
     }
-
 
     var xhttp = new XMLHttpRequest();
     xhttp.onreadystatechange = function() {
@@ -49,24 +37,21 @@ function login_now(){
             var json_reponse = JSON.parse(this.responseText);
             // check if it returned an error
             if(json_reponse.error == false){
-                var token = json_reponse.token;
-                setCookie('token',token,7);
                 // hide spin loader
                 spin_loader.style.display = 'none';
-                alert("Credentials verified successfully");
+                // show info/alert box
+                info_box.style.display = 'block';
+                alert("Your account was created successfully");
                 // redirect to login page 
-                window.location = "todo.html";
+                window.location = `${api_host_url}home`;
+            }else{
+                alert("Sorry, there was an error with your request.")
             }
-        }else if(this.status == 401){
-            // show info/alert box
-            info_box.style.display = 'block';
-            // hide spin loader
-            spin_loader.style.display = 'none';
         }
     };
-    xhttp.open("POST", api_host_url+"auth/login", true);
+    xhttp.open("POST", api_host_url+"auth/signup", true);
     xhttp.setRequestHeader("Content-Type", "application/json");
+    xhttp.setRequestHeader('Access-Control-Request-Headers', 'x-requested-with');
     xhttp.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-    xhttp.setRequestHeader("Authorization", "Basic " + btoa(username + ":" + password));
-    xhttp.send(JSON.stringify({username:username, password:password}));
+    xhttp.send(JSON.stringify({username:username, email:email, password:password}));
 }

@@ -1,4 +1,4 @@
-var api_host_url = "https://que-hacer.herokuapp.com/";
+var api_host_url = "https://que-hacer.onyedikachiudeh.repl.co/";
 
 // get the spin-loader
 var spin_loader = document.getElementById('spin_loader');

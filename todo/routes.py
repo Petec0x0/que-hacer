@@ -1,5 +1,5 @@
 from todo import app, db
-from flask import request, jsonify, make_response
+from flask import request, jsonify, make_response, render_template
 import todo
 from todo.models import User, Todo
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -33,9 +33,28 @@ def token_required(f):
     return decorated
 
 
+"""
+  Template routes
+"""
+# route to the home page
+@app.route('/')
+@app.route('/home')
+def home():
+    return render_template('index.html')
+
+# route to the signUp page
+@app.route('/signup')
+def signup_page():
+    return render_template('signup.html')
+
+
+# route to the SignIn page
+@app.route('/todos')
+def todos_page():
+    return render_template('todo.html')
 
 """
-   THE USER ROUTES 
+  API USER ROUTES 
 """
 # this route gets all the available users in the database
 @app.route('/users', methods=['GET'])
